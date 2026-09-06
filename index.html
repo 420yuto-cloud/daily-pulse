@@ -597,18 +597,33 @@
     }
 
     // レイヤー2：一次キーワード詳細ポップアップ
+// レイヤー2：一次キーワード詳細ポップアップ（人物丸アイコン対応）
     function openKeywordModal(kw) {
       const headerBox = document.getElementById('kwHeaderContainer');
       const widgetBox = document.getElementById('kwRichWidget');
       headerBox.innerHTML = '';
       widgetBox.innerHTML = '';
 
-      headerBox.innerHTML = `
-        <h3 class="kw-title">${kw.name}</h3>
-        ${kw.role ? `<div class="kw-subtitle">${kw.role}</div>` : ''}
-      `;
+      // 人物の場合：丸型アバター写真を表示
+      if (kw.type === "player") {
+        const avatarSrc = kw.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80";
+        headerBox.innerHTML = `
+          <div style="display:flex; align-items:center; gap:14px; margin-bottom:14px;">
+            <img src="${avatarSrc}" alt="${kw.name}" style="width:56px; height:56px; border-radius:50%; object-fit:cover; border:2px solid var(--accent-blue); flex-shrink:0;">
+            <div>
+              <div class="kw-title">${kw.name}</div>
+              ${kw.role ? `<div class="kw-subtitle" style="margin-bottom:0;">${kw.role}</div>` : ''}
+            </div>
+          </div>
+        `;
+      } else {
+        headerBox.innerHTML = `
+          <h3 class="kw-title">${kw.name}</h3>
+          ${kw.role ? `<div class="kw-subtitle">${kw.role}</div>` : ''}
+        `;
+      }
 
-      // ロケーション（地図）がある場合の自動埋め込み
+      // ロケーション（地図）
       if (kw.type === "location" && kw.locationQuery) {
         const mapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(kw.locationQuery)}&output=embed`;
         widgetBox.innerHTML = `
@@ -620,6 +635,25 @@
           </div>
         `;
       }
+
+      document.getElementById('kwModalSummary').innerText = kw.summary || '詳細情報なし';
+
+      // 二次キーワードタグ
+      const secContainer = document.getElementById('kwSecondaryContainer');
+      secContainer.innerHTML = '';
+      if (kw.secondaryKeywords && kw.secondaryKeywords.length > 0) {
+        kw.secondaryKeywords.forEach(secWord => {
+          const a = document.createElement('a');
+          a.className = 'secondary-keyword-tag';
+          a.href = `https://www.google.com/search?q=${encodeURIComponent(secWord)}`;
+          a.target = '_blank';
+          a.innerHTML = `<span>${secWord}</span><span>↗</span>`;
+          secContainer.appendChild(a);
+        });
+      }
+
+      kwModalBackdrop.classList.add('active');
+    }
 
       document.getElementById('kwModalSummary').innerText = kw.summary || '動向情報なし';
 
