@@ -231,7 +231,7 @@
       aspect-ratio: 16 / 9;
       border-radius: 16px;
       overflow: hidden;
-      margin-bottom: 16px;
+      margin-bottom: 6px;
       background-color: #0b0f19;
       border: 1px solid rgba(255, 255, 255, 0.08);
       display: none;
@@ -241,6 +241,16 @@
       height: 100%;
       object-fit: cover;
       display: block;
+    }
+
+    /* 画像注釈（キャプション） */
+    .modal-media-caption {
+      font-size: 11px;
+      color: #94a3b8;
+      line-height: 1.4;
+      margin-bottom: 14px;
+      padding: 0 4px;
+      display: none;
     }
 
     .section-box {
@@ -376,7 +386,7 @@
       margin-bottom: 14px;
     }
 
-    /* 人物プロフィールヘッダー */
+    /* プロフィールヘッダー */
     .kw-profile-header {
       display: flex;
       align-items: center;
@@ -396,7 +406,6 @@
       align-items: center;
       justify-content: center;
       box-shadow: 0 4px 14px rgba(56, 189, 248, 0.25);
-      position: relative;
     }
 
     .kw-avatar-img {
@@ -406,7 +415,6 @@
       display: none;
     }
 
-    /* 写真がない時の洗練されたモノグラム（イニシャル） */
     .kw-avatar-monogram {
       font-size: 24px;
       font-weight: 900;
@@ -487,6 +495,8 @@
       <div class="modal-media-frame" id="modalMediaFrame">
         <img id="modalMediaImg" src="" alt="Article Photo">
       </div>
+      <!-- 写真の注釈・キャプション表示 -->
+      <div class="modal-media-caption" id="modalMediaCaption"></div>
 
       <div class="section-box">
         <div class="section-label">📌 客観ファクト（一次事実）</div>
@@ -512,7 +522,6 @@
     <div class="kw-modal-card">
       <button class="back-button" id="kwBackButton">← 記事詳細に戻る</button>
       
-      <!-- ヘッダーエリア -->
       <div class="kw-profile-header">
         <div class="kw-avatar-box" id="kwAvatarBox">
           <img class="kw-avatar-img" id="kwAvatarImg" src="" alt="Avatar">
@@ -542,7 +551,6 @@
     // ★★★ ご自身のGAS WebアプリURLをここに貼り付けてください ★★★
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzOdNSo1fFPwspu66gFe6jP6YmyCSRyYLc0wWL1ddEqmjDTJpaRkj49lK7m80WXeGyQTw/exec";
 
-    // Wikipedia画像のメモリキャッシュ（重複取得を防いで爆速化）
     const wikiPhotoCache = {};
 
     const feedGrid = document.getElementById('feedGrid');
@@ -595,11 +603,22 @@
       
       const mediaFrame = document.getElementById('modalMediaFrame');
       const mediaImg = document.getElementById('modalMediaImg');
+      const mediaCaption = document.getElementById('modalMediaCaption');
+
       if (item.image) {
         mediaImg.src = item.image;
         mediaFrame.style.display = 'block';
+
+        // 写真キャプションがあれば表示
+        if (item.imageCaption && item.imageCaption.trim().length > 0) {
+          mediaCaption.innerText = `📷 ${item.imageCaption.trim()}`;
+          mediaCaption.style.display = 'block';
+        } else {
+          mediaCaption.style.display = 'none';
+        }
       } else {
         mediaFrame.style.display = 'none';
+        mediaCaption.style.display = 'none';
       }
 
       document.getElementById('modalFact').innerText = item.fact || '事実情報の取得中';
@@ -623,16 +642,20 @@
         item.primaryKeywords.forEach(kw => {
           const btn = document.createElement('button');
           btn.className = 'primary-keyword-tag';
+          
+          // タイプ別の絵文字アイコン付与
           let icon = "⚡";
           const typeLower = (kw.type || "").toLowerCase().trim();
           if (typeLower === "player" || typeLower === "person" || typeLower === "athlete" || typeLower === "選手") icon = "👤";
-          if (typeLower === "standing") icon = "📊";
-          if (typeLower === "location") icon = "📍";
+          else if (typeLower === "league" || typeLower === "tournament" || typeLower === "大会") icon = "🏆";
+          else if (typeLower === "team" || typeLower === "球団" || typeLower === "チーム") icon = "🛡️";
+          else if (typeLower === "location" || typeLower === "建築地" || typeLower === "会場") icon = "📍";
+          else if (typeLower === "standing") icon = "📊";
           
           btn.innerHTML = `<span>${kw.name}</span><span>${icon}</span>`;
           btn.onclick = (e) => {
             e.stopPropagation();
-            openKeywordModal(kw); // 記事画像は渡さない（他人の写真の誤爆を根絶）
+            openKeywordModal(kw);
           };
           kwContainer.appendChild(btn);
         });
@@ -644,19 +667,15 @@
       document.body.style.overflow = 'hidden';
     }
 
-    // Wikipedia検索APIを利用して、人物名から顔写真URLを動的に検索・取得する関数
-    async function fetchPersonPhotoFromWikipedia(personName) {
-      if (wikiPhotoCache[personName] !== undefined) {
-        return wikiPhotoCache[personName];
-      }
+    async function fetchPersonPhotoFromWikipedia(name) {
+      if (wikiPhotoCache[name] !== undefined) return wikiPhotoCache[name];
 
       try {
-        // 全角記号などを整理してWikipedia検索に最適化
-        const cleanQuery = personName.replace(/[\(（].*?[\)）]/g, '').trim();
+        const cleanQuery = name.replace(/[\(（].*?[\)）]/g, '').trim();
         const searchUrl = `https://ja.wikipedia.org/w/api.php?action=query&format=json&origin=*&prop=pageimages&piprop=thumbnail&pithumbsize=240&generator=search&gsrsearch=${encodeURIComponent(cleanQuery)}&gsrlimit=1`;
         
         const res = await fetch(searchUrl);
-        if (!res.ok) throw new Error("Wiki search failed");
+        if (!res.ok) throw new Error("Wiki error");
         
         const data = await res.json();
         const pages = data.query && data.query.pages;
@@ -664,20 +683,19 @@
           for (const pid in pages) {
             const page = pages[pid];
             if (page.thumbnail && page.thumbnail.source) {
-              wikiPhotoCache[personName] = page.thumbnail.source;
+              wikiPhotoCache[name] = page.thumbnail.source;
               return page.thumbnail.source;
             }
           }
         }
       } catch (err) {
-        console.warn("Wikipedia画像検索スキップ:", personName, err);
+        console.warn("Wiki画像取得スキップ:", name);
       }
 
-      wikiPhotoCache[personName] = null;
+      wikiPhotoCache[name] = null;
       return null;
     }
 
-    // レイヤー2：一次キーワード詳細モーダル
     async function openKeywordModal(kw) {
       const avatarBox = document.getElementById('kwAvatarBox');
       const avatarImg = document.getElementById('kwAvatarImg');
@@ -694,17 +712,14 @@
       const isPlayer = typeStr === "player" || typeStr === "person" || typeStr === "athlete" || typeStr === "選手";
 
       if (isPlayer) {
+        // 人物の場合は丸アイコン表示
         avatarBox.style.display = 'flex';
-
-        // 初期表示：名前の1文字目を使ったモノグラム（例：「大」「E」「妹」）
         const firstLetter = (kw.name || "👤").replace(/^[・\s]+/, '').charAt(0);
         avatarMonogram.innerText = firstLetter;
         avatarMonogram.style.display = 'block';
         avatarImg.style.display = 'none';
 
-        // 人物名でWikipediaを自動検索して本人の写真を取得
         const wikiPhoto = await fetchPersonPhotoFromWikipedia(kw.name);
-
         if (wikiPhoto) {
           avatarImg.src = wikiPhoto;
           avatarImg.onload = () => {
@@ -717,11 +732,11 @@
           };
         }
       } else {
-        // 人物以外（大会、スタジアム、建築物など）は丸枠を非表示
+        // リーグや大会、チーム、地名の場合は丸枠アイコンを非表示にしてすっきり見出し
         avatarBox.style.display = 'none';
       }
 
-      // 地図
+      // 地図表示
       if (typeStr === "location" && kw.locationQuery) {
         const mapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(kw.locationQuery)}&output=embed`;
         widgetBox.innerHTML = `
@@ -736,7 +751,7 @@
 
       document.getElementById('kwModalSummary').innerText = kw.summary || '詳細情報なし';
 
-      // 二次キーワード
+      // 二次キーワードタグ
       const secContainer = document.getElementById('kwSecondaryContainer');
       secContainer.innerHTML = '';
       if (kw.secondaryKeywords && kw.secondaryKeywords.length > 0) {
