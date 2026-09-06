@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <!-- 外部ニュースサイトの画像ブロック（ホットリンク拒絶）を完全に回避する重要設定 -->
   <meta name="referrer" content="no-referrer">
   <title>Daily Pulse</title>
   <style>
@@ -61,7 +60,6 @@
       font-size: 14px;
     }
 
-    /* 2カラム グリッド */
     .feed-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -147,7 +145,7 @@
       overflow: hidden;
     }
 
-    /* モーダル共通バックドロップ */
+    /* レイヤー1：記事モーダル */
     .modal-backdrop {
       position: fixed;
       top: 0;
@@ -319,14 +317,14 @@
       box-shadow: 0 4px 15px rgba(255, 255, 255, 0.15);
     }
 
-    /* レイヤー2：一次キーワード詳細ポップアップ */
+    /* レイヤー2：一次キーワード詳細モーダル */
     .kw-modal-backdrop {
       position: fixed;
       top: 0;
       left: 0;
       width: 100vw;
       height: 100vh;
-      background: rgba(0, 0, 0, 0.6);
+      background: rgba(0, 0, 0, 0.65);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       z-index: 200;
@@ -378,7 +376,7 @@
       margin-bottom: 14px;
     }
 
-    /* ステップ1準拠の確実なヘッダー・丸アバター設計 */
+    /* 人物プロフィールヘッダー */
     .kw-profile-header {
       display: flex;
       align-items: center;
@@ -398,20 +396,23 @@
       align-items: center;
       justify-content: center;
       box-shadow: 0 4px 14px rgba(56, 189, 248, 0.25);
+      position: relative;
     }
 
     .kw-avatar-img {
       width: 100%;
       height: 100%;
       object-fit: cover;
-      display: block;
+      display: none;
     }
 
-    .kw-avatar-svg {
-      width: 32px;
-      height: 32px;
-      fill: #38bdf8;
-      display: none;
+    /* 写真がない時の洗練されたモノグラム（イニシャル） */
+    .kw-avatar-monogram {
+      font-size: 24px;
+      font-weight: 900;
+      color: #38bdf8;
+      text-transform: uppercase;
+      user-select: none;
     }
 
     .kw-title-group {
@@ -506,19 +507,16 @@
     </div>
   </div>
 
-  <!-- レイヤー2：一次キーワード詳細動向ポップアップ（ステップ1準拠の確定構造） -->
+  <!-- レイヤー2：一次キーワード詳細ポップアップ -->
   <div class="kw-modal-backdrop" id="kwModalBackdrop">
     <div class="kw-modal-card">
       <button class="back-button" id="kwBackButton">← 記事詳細に戻る</button>
       
-      <!-- ヘッダーエリア：丸アバター枠 ＋ タイトル・肩書 -->
+      <!-- ヘッダーエリア -->
       <div class="kw-profile-header">
         <div class="kw-avatar-box" id="kwAvatarBox">
           <img class="kw-avatar-img" id="kwAvatarImg" src="" alt="Avatar">
-          <!-- 画像がnullやエラーの場合のSVGフォールバック -->
-          <svg class="kw-avatar-svg" id="kwAvatarSvg" viewBox="0 0 24 24">
-            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-          </svg>
+          <div class="kw-avatar-monogram" id="kwAvatarMonogram">👤</div>
         </div>
         <div class="kw-title-group">
           <h3 class="kw-title" id="kwTitle"></h3>
@@ -526,7 +524,6 @@
         </div>
       </div>
 
-      <!-- 地図等の動的ウィジェット -->
       <div id="kwRichWidget"></div>
 
       <div class="section-box">
@@ -544,6 +541,9 @@
   <script>
     // ★★★ ご自身のGAS WebアプリURLをここに貼り付けてください ★★★
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzOdNSo1fFPwspu66gFe6jP6YmyCSRyYLc0wWL1ddEqmjDTJpaRkj49lK7m80WXeGyQTw/exec";
+
+    // Wikipedia画像のメモリキャッシュ（重複取得を防いで爆速化）
+    const wikiPhotoCache = {};
 
     const feedGrid = document.getElementById('feedGrid');
     const statusMessage = document.getElementById('statusMessage');
@@ -632,8 +632,7 @@
           btn.innerHTML = `<span>${kw.name}</span><span>${icon}</span>`;
           btn.onclick = (e) => {
             e.stopPropagation();
-            // 親記事の写真URL (item.image) を渡す
-            openKeywordModal(kw, item.image || "");
+            openKeywordModal(kw); // 記事画像は渡さない（他人の写真の誤爆を根絶）
           };
           kwContainer.appendChild(btn);
         });
@@ -645,11 +644,44 @@
       document.body.style.overflow = 'hidden';
     }
 
-    // レイヤー2：一次キーワードポップアップ（確定構造 ＆ フォールバック保証）
-    function openKeywordModal(kw, parentArticleImage) {
+    // Wikipedia検索APIを利用して、人物名から顔写真URLを動的に検索・取得する関数
+    async function fetchPersonPhotoFromWikipedia(personName) {
+      if (wikiPhotoCache[personName] !== undefined) {
+        return wikiPhotoCache[personName];
+      }
+
+      try {
+        // 全角記号などを整理してWikipedia検索に最適化
+        const cleanQuery = personName.replace(/[\(（].*?[\)）]/g, '').trim();
+        const searchUrl = `https://ja.wikipedia.org/w/api.php?action=query&format=json&origin=*&prop=pageimages&piprop=thumbnail&pithumbsize=240&generator=search&gsrsearch=${encodeURIComponent(cleanQuery)}&gsrlimit=1`;
+        
+        const res = await fetch(searchUrl);
+        if (!res.ok) throw new Error("Wiki search failed");
+        
+        const data = await res.json();
+        const pages = data.query && data.query.pages;
+        if (pages) {
+          for (const pid in pages) {
+            const page = pages[pid];
+            if (page.thumbnail && page.thumbnail.source) {
+              wikiPhotoCache[personName] = page.thumbnail.source;
+              return page.thumbnail.source;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Wikipedia画像検索スキップ:", personName, err);
+      }
+
+      wikiPhotoCache[personName] = null;
+      return null;
+    }
+
+    // レイヤー2：一次キーワード詳細モーダル
+    async function openKeywordModal(kw) {
       const avatarBox = document.getElementById('kwAvatarBox');
       const avatarImg = document.getElementById('kwAvatarImg');
-      const avatarSvg = document.getElementById('kwAvatarSvg');
+      const avatarMonogram = document.getElementById('kwAvatarMonogram');
       const kwTitle = document.getElementById('kwTitle');
       const kwSubtitle = document.getElementById('kwSubtitle');
       const widgetBox = document.getElementById('kwRichWidget');
@@ -664,32 +696,32 @@
       if (isPlayer) {
         avatarBox.style.display = 'flex';
 
-        // 写真候補: kw.photoUrl ➔ 親記事写真
-        const photoCandidate = (kw.photoUrl && kw.photoUrl.startsWith('http')) 
-          ? kw.photoUrl 
-          : ((parentArticleImage && parentArticleImage.startsWith('http')) ? parentArticleImage : null);
+        // 初期表示：名前の1文字目を使ったモノグラム（例：「大」「E」「妹」）
+        const firstLetter = (kw.name || "👤").replace(/^[・\s]+/, '').charAt(0);
+        avatarMonogram.innerText = firstLetter;
+        avatarMonogram.style.display = 'block';
+        avatarImg.style.display = 'none';
 
-        if (photoCandidate) {
-          avatarImg.style.display = 'block';
-          avatarSvg.style.display = 'none';
-          avatarImg.src = photoCandidate;
+        // 人物名でWikipediaを自動検索して本人の写真を取得
+        const wikiPhoto = await fetchPersonPhotoFromWikipedia(kw.name);
 
-          // 画像の読み込みに失敗（403など）した場合はSVGアイコンに即時フォールバック
+        if (wikiPhoto) {
+          avatarImg.src = wikiPhoto;
+          avatarImg.onload = () => {
+            avatarImg.style.display = 'block';
+            avatarMonogram.style.display = 'none';
+          };
           avatarImg.onerror = () => {
             avatarImg.style.display = 'none';
-            avatarSvg.style.display = 'block';
+            avatarMonogram.style.display = 'block';
           };
-        } else {
-          // 画像が元々nullの場合は、最初から美しいSVGシルエットアバターを表示
-          avatarImg.style.display = 'none';
-          avatarSvg.style.display = 'block';
         }
       } else {
-        // 人物以外（大会、場所など）は丸アイコン枠を非表示
+        // 人物以外（大会、スタジアム、建築物など）は丸枠を非表示
         avatarBox.style.display = 'none';
       }
 
-      // 地図表示
+      // 地図
       if (typeStr === "location" && kw.locationQuery) {
         const mapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(kw.locationQuery)}&output=embed`;
         widgetBox.innerHTML = `
@@ -704,7 +736,7 @@
 
       document.getElementById('kwModalSummary').innerText = kw.summary || '詳細情報なし';
 
-      // 二次キーワードタグ
+      // 二次キーワード
       const secContainer = document.getElementById('kwSecondaryContainer');
       secContainer.innerHTML = '';
       if (kw.secondaryKeywords && kw.secondaryKeywords.length > 0) {
