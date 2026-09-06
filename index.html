@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- 外部ニュースサイトの画像ブロック（ホットリンク拒絶）を完全に回避する重要設定 -->
+  <meta name="referrer" content="no-referrer">
   <title>Daily Pulse</title>
   <style>
     :root {
@@ -317,7 +319,7 @@
       box-shadow: 0 4px 15px rgba(255, 255, 255, 0.15);
     }
 
-    /* レイヤー2：一次キーワード詳細 */
+    /* レイヤー2：一次キーワード詳細ポップアップ */
     .kw-modal-backdrop {
       position: fixed;
       top: 0;
@@ -376,17 +378,73 @@
       margin-bottom: 14px;
     }
 
+    /* ステップ1準拠の確実なヘッダー・丸アバター設計 */
+    .kw-profile-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .kw-avatar-box {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      border: 2.5px solid var(--accent-blue);
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 14px rgba(56, 189, 248, 0.25);
+    }
+
+    .kw-avatar-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .kw-avatar-svg {
+      width: 32px;
+      height: 32px;
+      fill: #38bdf8;
+      display: none;
+    }
+
+    .kw-title-group {
+      min-width: 0;
+    }
+
     .kw-title {
       font-size: 19px;
       font-weight: 800;
       color: #ffffff;
       line-height: 1.3;
     }
+
     .kw-subtitle {
       font-size: 12px;
       color: #94a3b8;
       margin-top: 3px;
       line-height: 1.4;
+    }
+
+    /* 地図 */
+    .map-frame {
+      width: 100%;
+      height: 180px;
+      border-radius: 14px;
+      overflow: hidden;
+      margin-top: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .map-frame iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
     }
 
     .secondary-keyword-tag {
@@ -448,12 +506,27 @@
     </div>
   </div>
 
-  <!-- レイヤー2：一次キーワード詳細動向ポップアップ -->
+  <!-- レイヤー2：一次キーワード詳細動向ポップアップ（ステップ1準拠の確定構造） -->
   <div class="kw-modal-backdrop" id="kwModalBackdrop">
     <div class="kw-modal-card">
       <button class="back-button" id="kwBackButton">← 記事詳細に戻る</button>
       
-      <div id="kwHeaderContainer"></div>
+      <!-- ヘッダーエリア：丸アバター枠 ＋ タイトル・肩書 -->
+      <div class="kw-profile-header">
+        <div class="kw-avatar-box" id="kwAvatarBox">
+          <img class="kw-avatar-img" id="kwAvatarImg" src="" alt="Avatar">
+          <!-- 画像がnullやエラーの場合のSVGフォールバック -->
+          <svg class="kw-avatar-svg" id="kwAvatarSvg" viewBox="0 0 24 24">
+            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+          </svg>
+        </div>
+        <div class="kw-title-group">
+          <h3 class="kw-title" id="kwTitle"></h3>
+          <div class="kw-subtitle" id="kwSubtitle"></div>
+        </div>
+      </div>
+
+      <!-- 地図等の動的ウィジェット -->
       <div id="kwRichWidget"></div>
 
       <div class="section-box">
@@ -469,18 +542,8 @@
   </div>
 
   <script>
-    // ★★★ デプロイしたご自身のGAS WebアプリURLをここに貼り付けてください ★★★
+    // ★★★ ご自身のGAS WebアプリURLをここに貼り付けてください ★★★
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzOdNSo1fFPwspu66gFe6jP6YmyCSRyYLc0wWL1ddEqmjDTJpaRkj49lK7m80WXeGyQTw/exec";
-
-    // http画像のブロックを回避し、常に安全に表示するURL正規化関数
-    function makeSafeImageUrl(url) {
-      if (!url || typeof url !== 'string') return "";
-      // httpで始まる場合は、ブラウザ遮断を回避する高速画像プロキシを通す
-      if (url.startsWith('http://')) {
-        return `https://images.weserv.nl/?url=${encodeURIComponent(url.replace('http://', ''))}`;
-      }
-      return url;
-    }
 
     const feedGrid = document.getElementById('feedGrid');
     const statusMessage = document.getElementById('statusMessage');
@@ -513,9 +576,8 @@
       articles.forEach(item => {
         const card = document.createElement('div');
         card.className = 'news-card';
-        const safeBg = makeSafeImageUrl(item.image);
         card.innerHTML = `
-          <div class="card-bg" style="background-image: url('${safeBg}')"></div>
+          <div class="card-bg" style="background-image: url('${item.image || ''}')"></div>
           <div class="card-overlay"></div>
           <div class="card-content">
             <span class="genre-badge">${item.genre}</span>
@@ -534,7 +596,7 @@
       const mediaFrame = document.getElementById('modalMediaFrame');
       const mediaImg = document.getElementById('modalMediaImg');
       if (item.image) {
-        mediaImg.src = makeSafeImageUrl(item.image);
+        mediaImg.src = item.image;
         mediaFrame.style.display = 'block';
       } else {
         mediaFrame.style.display = 'none';
@@ -570,6 +632,7 @@
           btn.innerHTML = `<span>${kw.name}</span><span>${icon}</span>`;
           btn.onclick = (e) => {
             e.stopPropagation();
+            // 親記事の写真URL (item.image) を渡す
             openKeywordModal(kw, item.image || "");
           };
           kwContainer.appendChild(btn);
@@ -582,61 +645,57 @@
       document.body.style.overflow = 'hidden';
     }
 
-    async function openKeywordModal(kw, parentArticleImage) {
-      const headerBox = document.getElementById('kwHeaderContainer');
+    // レイヤー2：一次キーワードポップアップ（確定構造 ＆ フォールバック保証）
+    function openKeywordModal(kw, parentArticleImage) {
+      const avatarBox = document.getElementById('kwAvatarBox');
+      const avatarImg = document.getElementById('kwAvatarImg');
+      const avatarSvg = document.getElementById('kwAvatarSvg');
+      const kwTitle = document.getElementById('kwTitle');
+      const kwSubtitle = document.getElementById('kwSubtitle');
       const widgetBox = document.getElementById('kwRichWidget');
-      headerBox.innerHTML = '';
+
       widgetBox.innerHTML = '';
+      kwTitle.innerText = kw.name;
+      kwSubtitle.innerText = kw.role || '';
 
       const typeStr = (kw.type || "").toLowerCase().trim();
       const isPlayer = typeStr === "player" || typeStr === "person" || typeStr === "athlete" || typeStr === "選手";
 
       if (isPlayer) {
-        // 画像候補の優先順位:
-        // 1. kw.photoUrl (大坂なおみ本人の写真URL)
-        // 2. parentArticleImage (親記事のメイン画像)
-        // 3. デフォルトプレースホルダー
-        let rawPhoto = kw.photoUrl || parentArticleImage || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80";
-        let safePhoto = makeSafeImageUrl(rawPhoto);
+        avatarBox.style.display = 'flex';
 
-        headerBox.innerHTML = `
-          <div style="display:flex; align-items:center; gap:14px; margin-bottom:14px;">
-            <img id="kwAvatarImg" src="${safePhoto}" alt="${kw.name}" style="width:62px; height:62px; border-radius:50%; object-fit:cover; border:2.5px solid #38bdf8; flex-shrink:0; background:#0b0f19; box-shadow: 0 4px 12px rgba(56,189,248,0.25);">
-            <div style="min-width:0;">
-              <div class="kw-title">${kw.name}</div>
-              ${kw.role ? `<div class="kw-subtitle">${kw.role}</div>` : ''}
-            </div>
-          </div>
-        `;
+        // 写真候補: kw.photoUrl ➔ 親記事写真
+        const photoCandidate = (kw.photoUrl && kw.photoUrl.startsWith('http')) 
+          ? kw.photoUrl 
+          : ((parentArticleImage && parentArticleImage.startsWith('http')) ? parentArticleImage : null);
 
-        // メルテンスのように photoUrl が null かつ画像がない場合のみ Wikipedia を検索
-        if (!kw.photoUrl && !parentArticleImage) {
-          const cleanSearchName = kw.name.replace(/^[A-ZＡ-Ｚ・\s]+/, '').trim() || kw.name;
-          fetch(`https://ja.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanSearchName)}`)
-            .then(res => res.ok ? res.json() : null)
-            .then(data => {
-              if (data && data.thumbnail && data.thumbnail.source) {
-                const imgEl = document.getElementById('kwAvatarImg');
-                if (imgEl) imgEl.src = makeSafeImageUrl(data.thumbnail.source);
-              }
-            })
-            .catch(() => {});
+        if (photoCandidate) {
+          avatarImg.style.display = 'block';
+          avatarSvg.style.display = 'none';
+          avatarImg.src = photoCandidate;
+
+          // 画像の読み込みに失敗（403など）した場合はSVGアイコンに即時フォールバック
+          avatarImg.onerror = () => {
+            avatarImg.style.display = 'none';
+            avatarSvg.style.display = 'block';
+          };
+        } else {
+          // 画像が元々nullの場合は、最初から美しいSVGシルエットアバターを表示
+          avatarImg.style.display = 'none';
+          avatarSvg.style.display = 'block';
         }
-
       } else {
-        headerBox.innerHTML = `
-          <h3 class="kw-title">${kw.name}</h3>
-          ${kw.role ? `<div class="kw-subtitle" style="margin-bottom:12px;">${kw.role}</div>` : ''}
-        `;
+        // 人物以外（大会、場所など）は丸アイコン枠を非表示
+        avatarBox.style.display = 'none';
       }
 
-      // 地図
+      // 地図表示
       if (typeStr === "location" && kw.locationQuery) {
         const mapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(kw.locationQuery)}&output=embed`;
         widgetBox.innerHTML = `
           <div class="section-box" style="padding: 10px 12px; margin-bottom:12px;">
             <div class="section-label">📍 現地ロケーション（マップ）</div>
-            <div class="map-frame" style="width:100%; height:180px; border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,0.1);">
+            <div class="map-frame">
               <iframe src="${mapUrl}" width="100%" height="100%" style="border:none;" loading="lazy"></iframe>
             </div>
           </div>
@@ -645,7 +704,7 @@
 
       document.getElementById('kwModalSummary').innerText = kw.summary || '詳細情報なし';
 
-      // 二次キーワード
+      // 二次キーワードタグ
       const secContainer = document.getElementById('kwSecondaryContainer');
       secContainer.innerHTML = '';
       if (kw.secondaryKeywords && kw.secondaryKeywords.length > 0) {
