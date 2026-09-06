@@ -51,7 +51,7 @@
       margin-top: 4px;
     }
 
-    /* ローディング表示 */
+    /* ローディング / ステータス表示 */
     .status-message {
       grid-column: span 2;
       text-align: center;
@@ -60,7 +60,7 @@
       font-size: 14px;
     }
 
-    /* Drops風 カードグリッド */
+    /* Drops風 カードグリッド (2カラム) */
     .feed-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -128,6 +128,7 @@
       letter-spacing: 0.8px;
       text-transform: uppercase;
       backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
       background: rgba(255, 255, 255, 0.2);
       border: 1px solid rgba(255, 255, 255, 0.25);
     }
@@ -318,7 +319,7 @@
       box-shadow: 0 4px 15px rgba(255, 255, 255, 0.15);
     }
 
-    /* レイヤー2：一次キーワード詳細動向ポップアップ */
+    /* レイヤー2：一次キーワード詳細ポップアップ */
     .kw-modal-backdrop {
       position: fixed;
       top: 0;
@@ -387,7 +388,6 @@
       font-size: 12px;
       color: #94a3b8;
       margin-top: 2px;
-      margin-bottom: 12px;
     }
 
     /* 地図埋め込みフレーム */
@@ -472,7 +472,7 @@
     <div class="kw-modal-card">
       <button class="back-button" id="kwBackButton">← 記事詳細に戻る</button>
       
-      <!-- ヘッダーエリア -->
+      <!-- ヘッダーエリア（人物アバター＋名前＋肩書） -->
       <div id="kwHeaderContainer"></div>
 
       <!-- 動的リッチコンテンツ（地図等） -->
@@ -509,16 +509,16 @@
         const articles = await res.json();
 
         if (!articles || articles.length === 0) {
-          statusMessage.innerText = "本日の記事は準備中です。深夜の自動バッチをお待ちください。";
+          statusMessage.innerText = "本日の記事は準備中です。";
           return;
         }
 
-        statusMessage.remove(); // ローディングを消す
+        statusMessage.remove();
         renderFeed(articles);
 
       } catch (err) {
         console.error(err);
-        statusMessage.innerText = "データの取得に失敗しました。URLまたは接続を確認してください。";
+        statusMessage.innerText = "データの取得に失敗しました。接続を確認してください。";
       }
     }
 
@@ -543,7 +543,6 @@
 
     // レイヤー1：記事詳細モーダル
     function openMainModal(item) {
-      currentArticleImage = item.image || ""; // 記事の画像を保持しておく
       document.getElementById('modalGenre').innerText = item.genre;
       document.getElementById('modalTitle').innerText = item.title;
       
@@ -578,14 +577,16 @@
           const btn = document.createElement('button');
           btn.className = 'primary-keyword-tag';
           let icon = "⚡";
-          if (kw.type === "player") icon = "👤";
-          if (kw.type === "standing") icon = "📊";
-          if (kw.type === "location") icon = "📍";
+          const typeLower = (kw.type || "").toLowerCase().trim();
+          if (typeLower === "player" || typeLower === "person" || typeLower === "athlete" || typeLower === "選手") icon = "👤";
+          if (typeLower === "standing") icon = "📊";
+          if (typeLower === "location") icon = "📍";
           
           btn.innerHTML = `<span>${kw.name}</span><span>${icon}</span>`;
           btn.onclick = (e) => {
             e.stopPropagation();
-            openKeywordModal(kw);
+            // 親記事の写真URL (item.image) を渡す
+            openKeywordModal(kw, item.image || "");
           };
           kwContainer.appendChild(btn);
         });
@@ -597,8 +598,8 @@
       document.body.style.overflow = 'hidden';
     }
 
-// レイヤー2：一次キーワード詳細ポップアップ（Wikipedia自動アバター取得対応）
-    async function openKeywordModal(kw) {
+    // レイヤー2：一次キーワード詳細ポップアップ
+    async function openKeywordModal(kw, parentArticleImage) {
       const headerBox = document.getElementById('kwHeaderContainer');
       const widgetBox = document.getElementById('kwRichWidget');
       headerBox.innerHTML = '';
@@ -608,46 +609,43 @@
       const isPlayer = typeStr === "player" || typeStr === "person" || typeStr === "athlete" || typeStr === "選手";
 
       if (isPlayer) {
-        // デフォルトプレースホルダー
-        let avatarSrc = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80";
+        // 画像候補の優先順位:
+        // 1. kw.photoUrl (GASが渡した写真)
+        // 2. parentArticleImage (親記事のメイン写真: ズベレフや大坂なおみの写真)
+        // 3. アスリート用プレースホルダー
+        let initialPhoto = (kw.photoUrl && kw.photoUrl.startsWith("http")) 
+          ? kw.photoUrl 
+          : (parentArticleImage && parentArticleImage.startsWith("http") ? parentArticleImage : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80");
 
-        // 1. データにphotoUrlがあれば最優先
-        if (kw.photoUrl && kw.photoUrl.startsWith("http")) {
-          avatarSrc = kw.photoUrl;
-        } 
-        // 2. なければWikipedia APIから人物のメイン顔写真を非同期検索
-        else {
-          try {
-            const wikiRes = await fetch(`https://ja.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(kw.name)}`);
-            if (wikiRes.ok) {
-              const wikiData = await wikiRes.json();
-              if (wikiData.thumbnail && wikiData.thumbnail.source) {
-                avatarSrc = wikiData.thumbnail.source;
-              }
-            }
-          } catch (e) {
-            // Wikipediaになければ開いている記事のメイン画像を使用
-            if (currentArticleImage && currentArticleImage.startsWith("http")) {
-              avatarSrc = currentArticleImage;
-            }
-          }
-        }
-
-        // 丸アイコン＋人物名＋肩書のレイアウト
+        // 丸アイコン＋人物名＋肩書のレイアウトを確定生成
         headerBox.innerHTML = `
           <div style="display:flex; align-items:center; gap:14px; margin-bottom:14px;">
-            <img src="${avatarSrc}" alt="${kw.name}" style="width:60px; height:60px; border-radius:50%; object-fit:cover; border:2px solid #38bdf8; flex-shrink:0; background:#0b0f19;">
+            <img id="kwAvatarImg" src="${initialPhoto}" alt="${kw.name}" style="width:60px; height:60px; border-radius:50%; object-fit:cover; border:2px solid #38bdf8; flex-shrink:0; background:#0b0f19;">
             <div>
-              <div class="kw-title" style="font-size:19px; font-weight:800; color:#ffffff; line-height:1.3;">${kw.name}</div>
-              ${kw.role ? `<div class="kw-subtitle" style="font-size:12px; color:#94a3b8; margin-top:2px;">${kw.role}</div>` : ''}
+              <div class="kw-title">${kw.name}</div>
+              ${kw.role ? `<div class="kw-subtitle">${kw.role}</div>` : ''}
             </div>
           </div>
         `;
+
+        // もし独自写真がなかった場合のみ、Wikipedia APIからポートレート顔写真を非同期取得して差し替える
+        if (!kw.photoUrl && !parentArticleImage) {
+          fetch(`https://ja.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(kw.name)}`)
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+              if (data && data.thumbnail && data.thumbnail.source) {
+                const imgEl = document.getElementById('kwAvatarImg');
+                if (imgEl) imgEl.src = data.thumbnail.source;
+              }
+            })
+            .catch(() => {});
+        }
+
       } else {
-        // 人物以外（大会・施設・チームなど）
+        // 人物以外（大会、スタジアム、建築など）
         headerBox.innerHTML = `
-          <h3 class="kw-title" style="font-size:19px; font-weight:800; color:#ffffff; line-height:1.3;">${kw.name}</h3>
-          ${kw.role ? `<div class="kw-subtitle" style="font-size:12px; color:#94a3b8; margin-top:2px; margin-bottom:12px;">${kw.role}</div>` : ''}
+          <h3 class="kw-title">${kw.name}</h3>
+          ${kw.role ? `<div class="kw-subtitle" style="margin-bottom:12px;">${kw.role}</div>` : ''}
         `;
       }
 
@@ -656,8 +654,8 @@
         const mapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(kw.locationQuery)}&output=embed`;
         widgetBox.innerHTML = `
           <div class="section-box" style="padding: 10px 12px; margin-bottom:12px;">
-            <div class="section-label" style="font-size:11.5px; font-weight:750; color:#94a3b8; margin-bottom:6px;">📍 現地ロケーション（マップ）</div>
-            <div class="map-frame" style="width:100%; height:180px; border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,0.1);">
+            <div class="section-label">📍 現地ロケーション（マップ）</div>
+            <div class="map-frame">
               <iframe src="${mapUrl}" width="100%" height="100%" style="border:none;" loading="lazy"></iframe>
             </div>
           </div>
@@ -665,44 +663,6 @@
       }
 
       document.getElementById('kwModalSummary').innerText = kw.summary || '詳細情報なし';
-
-      // 二次キーワードタグ
-      const secContainer = document.getElementById('kwSecondaryContainer');
-      secContainer.innerHTML = '';
-      if (kw.secondaryKeywords && kw.secondaryKeywords.length > 0) {
-        kw.secondaryKeywords.forEach(secWord => {
-          const a = document.createElement('a');
-          a.className = 'secondary-keyword-tag';
-          a.href = `https://www.google.com/search?q=${encodeURIComponent(secWord)}`;
-          a.target = '_blank';
-          a.innerHTML = `<span>${secWord}</span><span>↗</span>`;
-          secContainer.appendChild(a);
-        });
-      }
-
-      kwModalBackdrop.classList.add('active');
-    }
-
-      document.getElementById('kwModalSummary').innerText = kw.summary || '詳細情報なし';
-
-      // 二次キーワードタグ
-      const secContainer = document.getElementById('kwSecondaryContainer');
-      secContainer.innerHTML = '';
-      if (kw.secondaryKeywords && kw.secondaryKeywords.length > 0) {
-        kw.secondaryKeywords.forEach(secWord => {
-          const a = document.createElement('a');
-          a.className = 'secondary-keyword-tag';
-          a.href = `https://www.google.com/search?q=${encodeURIComponent(secWord)}`;
-          a.target = '_blank';
-          a.innerHTML = `<span>${secWord}</span><span>↗</span>`;
-          secContainer.appendChild(a);
-        });
-      }
-
-      kwModalBackdrop.classList.add('active');
-    }
-
-      document.getElementById('kwModalSummary').innerText = kw.summary || '動向情報なし';
 
       // 二次キーワードタグ
       const secContainer = document.getElementById('kwSecondaryContainer');
@@ -740,7 +700,7 @@
       if (e.target === kwModalBackdrop) closeKeywordModal();
     };
 
-    // 起動時にAPIから取得開始
+    // 起動時にデータ取得
     loadNews();
   </script>
 </body>
