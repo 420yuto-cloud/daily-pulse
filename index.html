@@ -543,6 +543,7 @@
 
     // レイヤー1：記事詳細モーダル
     function openMainModal(item) {
+      currentArticleImage = item.image || ""; // 記事の画像を保持しておく
       document.getElementById('modalGenre').innerText = item.genre;
       document.getElementById('modalTitle').innerText = item.title;
       
@@ -596,45 +597,91 @@
       document.body.style.overflow = 'hidden';
     }
 
-    // レイヤー2：一次キーワード詳細ポップアップ
-// レイヤー2：一次キーワード詳細ポップアップ（人物丸アイコン対応）
-    function openKeywordModal(kw) {
+// レイヤー2：一次キーワード詳細ポップアップ（Wikipedia自動アバター取得対応）
+    async function openKeywordModal(kw) {
       const headerBox = document.getElementById('kwHeaderContainer');
       const widgetBox = document.getElementById('kwRichWidget');
       headerBox.innerHTML = '';
       widgetBox.innerHTML = '';
 
-      // 人物の場合：丸型アバター写真を表示
-      if (kw.type === "player") {
-        const avatarSrc = kw.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80";
+      const typeStr = (kw.type || "").toLowerCase().trim();
+      const isPlayer = typeStr === "player" || typeStr === "person" || typeStr === "athlete" || typeStr === "選手";
+
+      if (isPlayer) {
+        // デフォルトプレースホルダー
+        let avatarSrc = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80";
+
+        // 1. データにphotoUrlがあれば最優先
+        if (kw.photoUrl && kw.photoUrl.startsWith("http")) {
+          avatarSrc = kw.photoUrl;
+        } 
+        // 2. なければWikipedia APIから人物のメイン顔写真を非同期検索
+        else {
+          try {
+            const wikiRes = await fetch(`https://ja.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(kw.name)}`);
+            if (wikiRes.ok) {
+              const wikiData = await wikiRes.json();
+              if (wikiData.thumbnail && wikiData.thumbnail.source) {
+                avatarSrc = wikiData.thumbnail.source;
+              }
+            }
+          } catch (e) {
+            // Wikipediaになければ開いている記事のメイン画像を使用
+            if (currentArticleImage && currentArticleImage.startsWith("http")) {
+              avatarSrc = currentArticleImage;
+            }
+          }
+        }
+
+        // 丸アイコン＋人物名＋肩書のレイアウト
         headerBox.innerHTML = `
           <div style="display:flex; align-items:center; gap:14px; margin-bottom:14px;">
-            <img src="${avatarSrc}" alt="${kw.name}" style="width:56px; height:56px; border-radius:50%; object-fit:cover; border:2px solid var(--accent-blue); flex-shrink:0;">
+            <img src="${avatarSrc}" alt="${kw.name}" style="width:60px; height:60px; border-radius:50%; object-fit:cover; border:2px solid #38bdf8; flex-shrink:0; background:#0b0f19;">
             <div>
-              <div class="kw-title">${kw.name}</div>
-              ${kw.role ? `<div class="kw-subtitle" style="margin-bottom:0;">${kw.role}</div>` : ''}
+              <div class="kw-title" style="font-size:19px; font-weight:800; color:#ffffff; line-height:1.3;">${kw.name}</div>
+              ${kw.role ? `<div class="kw-subtitle" style="font-size:12px; color:#94a3b8; margin-top:2px;">${kw.role}</div>` : ''}
             </div>
           </div>
         `;
       } else {
+        // 人物以外（大会・施設・チームなど）
         headerBox.innerHTML = `
-          <h3 class="kw-title">${kw.name}</h3>
-          ${kw.role ? `<div class="kw-subtitle">${kw.role}</div>` : ''}
+          <h3 class="kw-title" style="font-size:19px; font-weight:800; color:#ffffff; line-height:1.3;">${kw.name}</h3>
+          ${kw.role ? `<div class="kw-subtitle" style="font-size:12px; color:#94a3b8; margin-top:2px; margin-bottom:12px;">${kw.role}</div>` : ''}
         `;
       }
 
-      // ロケーション（地図）
-      if (kw.type === "location" && kw.locationQuery) {
+      // 地図表示（ロケーション）
+      if (typeStr === "location" && kw.locationQuery) {
         const mapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(kw.locationQuery)}&output=embed`;
         widgetBox.innerHTML = `
-          <div class="section-box" style="padding: 10px 12px;">
-            <div class="section-label">📍 現地ロケーション（マップ）</div>
-            <div class="map-frame">
-              <iframe src="${mapUrl}" loading="lazy"></iframe>
+          <div class="section-box" style="padding: 10px 12px; margin-bottom:12px;">
+            <div class="section-label" style="font-size:11.5px; font-weight:750; color:#94a3b8; margin-bottom:6px;">📍 現地ロケーション（マップ）</div>
+            <div class="map-frame" style="width:100%; height:180px; border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,0.1);">
+              <iframe src="${mapUrl}" width="100%" height="100%" style="border:none;" loading="lazy"></iframe>
             </div>
           </div>
         `;
       }
+
+      document.getElementById('kwModalSummary').innerText = kw.summary || '詳細情報なし';
+
+      // 二次キーワードタグ
+      const secContainer = document.getElementById('kwSecondaryContainer');
+      secContainer.innerHTML = '';
+      if (kw.secondaryKeywords && kw.secondaryKeywords.length > 0) {
+        kw.secondaryKeywords.forEach(secWord => {
+          const a = document.createElement('a');
+          a.className = 'secondary-keyword-tag';
+          a.href = `https://www.google.com/search?q=${encodeURIComponent(secWord)}`;
+          a.target = '_blank';
+          a.innerHTML = `<span>${secWord}</span><span>↗</span>`;
+          secContainer.appendChild(a);
+        });
+      }
+
+      kwModalBackdrop.classList.add('active');
+    }
 
       document.getElementById('kwModalSummary').innerText = kw.summary || '詳細情報なし';
 
